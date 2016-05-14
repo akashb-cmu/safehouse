@@ -1,0 +1,28 @@
+Stuff I had to do:
+Follow all steps at least until section 6 in the cuda installation manual: http://developer.download.nvidia.com/compute/cuda/7.5/Prod/docs/sidebar/CUDA_Installation_Guide_Linux.pdf
+
+You will probably run into issues when trying to compile the test sample scripts
+
+Install MPI library, following http://lsi.ugr.es/~jmantas/pdp/ayuda/datos/instalaciones/Install_OpenMPI_en.pdf
+
+Run sudo update-alternatives --config x86_64-linux-gnu_gl_conf and select the appropriate NVidia driver
+
+Resolve any other issues that turn up when you try to compule the test sample script, since chances are those same scripts or similar functionality scripts will be run by theano
+
+
+
+
+Try installing cuda from the .run file
+pass the --override and no-open-gl (confirm actual arg) as mentioned in the install tutorial
+
+
+*****************************************************************************************
+*** Please reboot your computer and verify that the nvidia graphics driver is loaded. ***
+*** If the driver fails to load, please use the NVIDIA graphics driver .run installer ***
+*** to get into a stable state.                                                       ***
+*****************************************************************************************
+
+
+
+
+
