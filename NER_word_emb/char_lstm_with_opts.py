@@ -55,22 +55,47 @@ arg_parser.add_argument("-use_trg", "--use_trg",
                         type=int)
 arg_parser.add_argument("-use_ortho", "--use_ortho",
                         help="Whether to use orhtographic features",
-                        default=1, choices=[0,1],
+                        default=0, choices=[0,1],
                         type=int)
 arg_parser.add_argument("-use_phono", "--use_phono",
                         help="Whether to use phonotactic features",
-                        default=1, choices=[0,1],
+                        default=0, choices=[0,1],
+                        type=int)
+arg_parser.add_argument("-use_wvecs", "--use_word_vectors",
+                        help="Whether to use word vectors",
+                        default=0, choices=[0, 1],
                         type=int)
 arg_parser.add_argument("-w_len", "--word_length_threshold", help="Cutoff in terms of word length", default=40,
                         type=int)
+arg_parser.add_argument("-src_wvecs", "--source_word_vecs", help="Word vectors for the source language",
+                        default=None,
+                        type=str)
+arg_parser.add_argument("-trg_wvecs", "--target_word_vecs", help="Word vectors for the target language",
+                        default=None,
+                        type=str)
 arg_parser.add_argument("-mname", "--model_name", help="Name of the model", default="model_stur_tuzb_phono_ortho_src_only",
                         type=str)
+arg_parser.add_argument("-use_caps", "--use_capitalization_feature",
+                        help="Whether to use capitalization features",
+                        default=1, choices=[0, 1],
+                        type=int)
+arg_parser.add_argument("-use_cats", "--use_word_categories",
+                        help="Whether to use word category features",
+                        default=1, choices=[0, 1],
+                        type=int)
 
 args = arg_parser.parse_args()
 print("Args used for this run:")
 print(args)
 src_lang = args.source
 trg_lang = args.target
+
+USE_WORD_VECS = False if args.use_word_vectors is 0 else True
+SRC_WVECS = args.source_word_vecs
+TRG_WVECS = args.target_word_vecs
+
+if USE_WORD_VECS:
+    assert None not in [SRC_WVECS, TRG_WVECS], "Word vector files not specified"
 
 EMBEDDING_DIM = args.embed_dim
 LSTM_OUTPUT_DIM = args.hidden_dim_lstm
@@ -92,6 +117,9 @@ TEST_SPLIT = args.test_split
 
 N_BATCH = args.batch_size
 N_EPOCH = args.num_epochs
+
+USE_CAPS = True if args.use_capitalization_feature is 1 else False
+USE_CATS = True if args.use_word_categories is 1 else False
 
 assert src_lang != trg_lang, "Source and target languages must be different"
 
@@ -185,7 +213,8 @@ def get_one_hot_char(n_chars, char_id):
     char_vect[char_id] = 1
     return char_vect
 
-def get_instance_from_word(word, epi, char_vocab, word_category_sets):
+# def get_instance_from_word(word, epi, char_vocab, word_category_sets):
+def get_instance_from_word(word, epi, char_vocab, word_category_sets, use_caps=True):
     vecs = epi.word_to_pfvector(word)
     ret_vecs = []
     n_chars = len(char_vocab.keys())
@@ -197,7 +226,8 @@ def get_instance_from_word(word, epi, char_vocab, word_category_sets):
          phonological_feature_vector) = vec
         c_vec = get_one_hot_char(n_chars, char_vocab[id_in_unicode_ipa_space])
         c_vec.extend(phonological_feature_vector)
-        c_vec.append(is_upper)
+        if use_caps:
+            c_vec.append(is_upper)
         for category_set in word_category_sets:
             if character_category in category_set:
                 c_vec.append(1)
@@ -319,7 +349,7 @@ def get_left_padded_numpy(vec_len, instances, max_len, reverse=False):
             instances[index] = zeros + instance
     return (np.array(instances))
 
-def create_phono_mats(phono_src_char_vocab, word_category_sets, NER_sets_dict, non_NER_set, epi):
+def create_phono_mats(phono_src_char_vocab, word_category_sets, NER_sets_dict, non_NER_set, epi, use_caps=True):
     print("Creating phono mats")
     phono_train_instances = []
     phono_test_instances = []
@@ -338,7 +368,7 @@ def create_phono_mats(phono_src_char_vocab, word_category_sets, NER_sets_dict, n
         tag_instances = []
         tag_labels = []
         for word in ner_words:
-            tag_instances.append(get_instance_from_word(word, epi, phono_src_char_vocab, word_category_sets))
+            tag_instances.append(get_instance_from_word(word, epi, phono_src_char_vocab, word_category_sets, use_caps=use_caps))
             zero_label_vect = [0 for i in range(n_classes)]
             zero_label_vect[tag_index] = 1
             assert tag_index < len(zero_label_vect) - 1, "Non ner class label given wrongly"
@@ -354,7 +384,7 @@ def create_phono_mats(phono_src_char_vocab, word_category_sets, NER_sets_dict, n
     non_ner_instances = []
     non_ner_labels = []
     for word in non_NER_set:
-        non_ner_instances.append(get_instance_from_word(word, epi, phono_src_char_vocab, word_category_sets))
+        non_ner_instances.append(get_instance_from_word(word, epi, phono_src_char_vocab, word_category_sets, use_caps=use_caps))
         zero_label_vect = [0 for i in range(n_classes)]
         zero_label_vect[-1] = 1
         non_ner_labels.append(zero_label_vect)
@@ -381,6 +411,9 @@ def create_phono_mats(phono_src_char_vocab, word_category_sets, NER_sets_dict, n
 
     phono_train_labels = np.array(phono_train_labels)
     phono_test_labels = np.array(phono_test_labels)
+
+    print("Phono label to index dict is")
+    print(phono_label_index_dict)
 
     print("Train input shapes")
     print(phono_train_instances.shape)
@@ -455,6 +488,9 @@ def create_ortho_mats(ortho_src_char_vocab, NER_sets_dict, non_NER_set):
     ortho_train_labels = np.array(ortho_train_labels)
     ortho_test_labels = np.array(ortho_test_labels)
 
+    print("Label to index dict for ortho is:")
+    print(ortho_label_index_dict)
+
     print("Ortho Train input shapes")
     print(ortho_train_instances.shape)
     print(ortho_rev_train_instances.shape)
@@ -465,12 +501,21 @@ def create_ortho_mats(ortho_src_char_vocab, NER_sets_dict, non_NER_set):
     return([ortho_train_instances, ortho_rev_train_instances, ortho_train_labels], [ortho_test_instances, ortho_rev_test_instances, ortho_test_labels], ortho_label_index_dict)
 
 
-def eval(fixed_char_encoder, phono_instances, phono_rev_instances, ortho_instances, ortho_rev_instances, phono_labels, ortho_labels):
+def eval(fixed_char_encoder, phono_instances, phono_rev_instances, ortho_instances, ortho_rev_instances, phono_labels, ortho_labels, wvec_instances, wvec_labels):
+    print("Sanity checks")
     if USE_PHONO and USE_ORTHO:
-        print("Sanity checks")
         assert False not in np.equal(ortho_labels, phono_labels), "Test sets not equal"
+        if USE_WORD_VECS:
+            assert False not in np.equal(ortho_labels, wvec_labels), "Test sets not equal"
         print("Sanity check passed")
-
+    elif USE_PHONO:
+        if USE_WORD_VECS:
+            assert False not in np.equal(wvec_labels, phono_labels), "Test sets not equal"
+        print("Sanity check passed")
+    elif USE_ORTHO:
+        if USE_WORD_VECS:
+            assert False not in np.equal(ortho_labels, wvec_labels), "Test sets not equal"
+        print("Sanity check passed")
     predict_inputs = {}
     if USE_PHONO:
         predict_inputs["phono_forward_input"] = phono_instances
@@ -478,6 +523,8 @@ def eval(fixed_char_encoder, phono_instances, phono_rev_instances, ortho_instanc
     if USE_ORTHO:
         predict_inputs["ortho_forward_input"] = ortho_instances
         predict_inputs["ortho_backward_input"] = ortho_rev_instances
+    if USE_WORD_VECS:
+        predict_inputs["wvec_input"] = wvec_instances
 
     predictions = fixed_char_encoder.predict(
         predict_inputs)  # {'output':...}
@@ -501,7 +548,6 @@ def eval(fixed_char_encoder, phono_instances, phono_rev_instances, ortho_instanc
         print("Instances shape: ", ortho_instances.shape, ortho_rev_instances.shape)
         recall, precision, test_conf_mat = get_accuracies(ner_outputs, ortho_labels)
 
-
     print("Stats")
     print("Recall")
     print(recall)
@@ -509,8 +555,97 @@ def eval(fixed_char_encoder, phono_instances, phono_rev_instances, ortho_instanc
     print(precision)
     print(test_conf_mat)
 
+def read_cca_vecs(cca_vec_file):
+    vec_dict = {}
+    with open(cca_vec_file, 'r') as vec_file:
+        for line in vec_file:
+            line = line.strip(" \t\r\n")
+            if len(line) > 0:
+                split_line = line.split()
+                # assert len(split_line[0].split(":")) == 2, "Too many splits in vec word"
+                # if len(split_line[0].split(":")) > 2:
+                #     print(split_line[0])
+                #     word = "".join(split_line[0].split(":")[1:])
+                #     print(word)
+                #     raw_input("We got a problem")
+                # else:
+                #     word = split_line[0].split(":")[1]
+                word = split_line[0].split(":", 1)[-1].strip(" \t\r\n").decode('utf8')
+                # if len(split_line[0].split(":")) > 2:
+                #     print(split_line[0])
+                #     print(word)
+                #     raw_input("Problem case")
+                vec = np.array([float(elt) for elt in split_line[1:]])
+                vec_dict[word] = vec
+    return(vec_dict)
+
+def create_wvec_mats(NER_sets_dict, non_NER_set, wvec_dict, test_split):
+    wvec_train_instances = []
+    wvec_train_labels = []
+    wvec_test_instances = []
+    wvec_test_labels = []
+    wvec_label_index_dict = {}
+    n_classes = len(NER_sets_dict) + 1
+    wvec_len = len(wvec_dict[wvec_dict.keys()[0]])
+    ner_skip_count = 0
+    for tag_index, ner_tag in enumerate(NER_sets_dict.keys()):
+        wvec_label_index_dict[ner_tag] = tag_index
+        ner_words = NER_sets_dict[ner_tag]
+        wvec_tag_instances = []
+        wvec_tag_labels = []
+        for word in ner_words:
+            try:
+                wvec_tag_instances.append(wvec_dict[word])
+            except:
+                # print("%s NER's word vector not found. Using 0 vector instead"%(word))
+                ner_skip_count += 1
+                wvec_tag_instances.append(np.zeros(wvec_len, dtype=np.float))
+            zero_label_vect = [0 for i in range(n_classes)]
+            zero_label_vect[tag_index] = 1
+            assert tag_index < len(zero_label_vect) - 1, "Non ner class label given wrongly"
+            wvec_tag_labels.append(zero_label_vect)
+        split_point = int(len(wvec_tag_instances) * (1 - test_split))
+        wvec_train_instances.extend(wvec_tag_instances[:split_point])
+        wvec_train_labels.extend(wvec_tag_labels[:split_point])
+        wvec_test_instances.extend(wvec_tag_instances[split_point:])
+        wvec_test_labels.extend(wvec_tag_labels[split_point:])
+
+    non_ner_skip_count = 0
+    wvec_non_ner_instances = []
+    wvec_non_ner_labels = []
+    for word in non_NER_set:
+        try:
+            wvec_non_ner_instances.append(wvec_dict[word])
+        except:
+            # print("%s non-NER's word vector not found. Using 0 vector instead" % (word))
+            non_ner_skip_count += 1
+            wvec_non_ner_instances.append(np.zeros(wvec_len, dtype=np.float))
+        zero_label_vect = [0 for i in range(n_classes)]
+        zero_label_vect[-1] = 1
+        wvec_non_ner_labels.append(zero_label_vect)
+
+    split_point = int(len(wvec_non_ner_instances) * (1 - test_split))
+    wvec_train_instances.extend(wvec_non_ner_instances[:split_point])
+    wvec_train_labels.extend(wvec_non_ner_labels[:split_point])
+    wvec_test_instances.extend(wvec_non_ner_instances[split_point:])
+    wvec_test_labels.extend(wvec_non_ner_labels[split_point:])
+
+    print("Word vector label to index dict")
+    print(wvec_label_index_dict)
+    print("%d NER's word vectors not found. %d non-NER's word vectors not found. They have been zeroed out"%(ner_skip_count, non_ner_skip_count))
+
+    return([np.array(wvec_train_instances), np.array(wvec_train_labels)], [np.array(wvec_test_instances), np.array(wvec_test_labels)])
+
+
+# CONFIRM THE WORD ORDERS ARE THE SAME FOR ORTHO, PHONO AND WVEC, perhaps by returning the words in order of processing from each extraction step
+
 def train_model():
     assert USE_PHONO or USE_ORTHO, "Not using any character representations!"
+
+    if USE_WORD_VECS:
+        src_wvecs = read_cca_vecs(SRC_WVECS)
+        trg_wvecs = read_cca_vecs(TRG_WVECS)
+        print(src_wvecs["Dinarʼda".decode('utf8')])
 
     if USE_PHONO:
         print("Extracting vocabs for Phono")
@@ -585,6 +720,19 @@ def train_model():
 
     print("Vocab extraction done")
 
+    if USE_WORD_VECS:
+        print("Obtaining word vector train/test matrices")
+        print(src_wvecs["Dinarʼda".decode('utf8')])
+        [wvec_train_instances, wvec_train_labels], [wvec_test_instances, wvec_test_labels] = create_wvec_mats(
+            NER_sets_dict, non_NER_set, src_wvecs, TEST_SPLIT)
+        print("Word vector matrices obtained")
+        print(wvec_train_instances.shape, wvec_train_labels.shape)
+        print(wvec_test_instances.shape, wvec_test_labels.shape)
+    else:
+        wvec_train_instances = None
+        wvec_train_labels = None
+        wvec_test_instances = None
+        wvec_test_labels = None
 
     char_codes = set(["Lu", "Ll", "Lt", "Lm", "Lo"])
     number_codes = set(["Nd", "Nl", "No"])
@@ -593,7 +741,10 @@ def train_model():
     sep_codes = set(["Zs", "Zl", "Zp"])
     mark_codes = set(["Mn", "Mc", "Me"])
     other_codes = set(["Cc", "Cs", "Cf", "Co", "Cn"])
-    word_category_sets = [char_codes, number_codes, punc_codes, sym_codes, sep_codes, mark_codes, other_codes]
+    if USE_CATS:
+        word_category_sets = [char_codes, number_codes, punc_codes, sym_codes, sep_codes, mark_codes, other_codes]
+    else:
+        word_category_sets = [] # No word categories used
 
     n_classes = len(NER_sets_dict.keys()) + 1
 
@@ -605,7 +756,7 @@ def train_model():
          phono_rev_test_instances,
          phono_test_labels], \
         phono_label_index_dict =\
-            create_phono_mats(phono_src_char_vocab, word_category_sets,NER_sets_dict, non_NER_set, epi)
+            create_phono_mats(phono_src_char_vocab, word_category_sets,NER_sets_dict, non_NER_set, epi, use_caps=USE_CAPS)
     else:
         phono_train_instances = None
         phono_rev_train_instances = None
@@ -635,7 +786,6 @@ def train_model():
         ortho_test_labels = None
         ortho_label_index_dict = None
 
-
     # CONFIRM IF INPUTS ARE CORRECT!
 
     """
@@ -647,13 +797,22 @@ def train_model():
         print("Sanity checks")
         assert False not in np.equal(ortho_train_labels, phono_train_labels), "Train sets are not equal"
         assert False not in np.equal(ortho_test_labels, phono_test_labels), "Test sets not equal"
+        if USE_WORD_VECS:
+            assert False not in np.equal(ortho_train_labels, wvec_train_labels), "Wvec train set doesn't match"
+            assert False not in np.equal(ortho_test_labels, wvec_test_labels), "Wvec test set doesn't match"
         print("Sanity check passed")
     elif USE_PHONO:
         ortho_test_labels = phono_test_labels
         ortho_train_labels = phono_train_labels
+        if USE_WORD_VECS:
+            assert False not in np.equal(phono_train_labels, wvec_train_labels), "Wvec train set doesn't match"
+            assert False not in np.equal(phono_test_labels, wvec_test_labels), "Wvec test set doesn't match"
     elif USE_ORTHO:
         phono_train_labels = ortho_train_labels
         phono_test_labels = ortho_test_labels
+        if USE_WORD_VECS:
+            assert False not in np.equal(ortho_train_labels, wvec_train_labels), "Wvec train set doesn't match"
+            assert False not in np.equal(ortho_test_labels, wvec_test_labels), "Wvec test set doesn't match"
 
     print("Creating model")
     fixed_char_encoder = Graph()
@@ -675,6 +834,12 @@ def train_model():
                                                                                         "ortho")
         merge_reps += [ortho_forward_lstm, ortho_backward_lstm]
         inputs.update(ortho_inputs)
+    if USE_WORD_VECS:
+        print("Adding the word vector input")
+        fixed_char_encoder.add_input("wvec_input", (wvec_train_instances.shape[1],))
+        inputs["wvec_input"] = wvec_train_instances
+        merge_reps += ["wvec_input"]
+        print("Added the word vector input")
 
     pre_predict_layer = Dense(output_dim=PRE_PREDICT_DIM, activation="tanh", W_regularizer=l2(PRE_PRED_REG))
 
@@ -703,23 +868,7 @@ def train_model():
 
     print("Evaluating on test")
     eval(fixed_char_encoder, phono_test_instances, phono_rev_test_instances, ortho_test_instances,
-         ortho_rev_test_instances, phono_test_labels, ortho_test_labels)
-
-    # print("Predicting with test set:")
-    # print("phono_test_instances of shape:", phono_test_instances.shape, phono_rev_test_instances.shape)
-    #
-    # # predictions = fixed_char_encoder.predict({"forward_input":phono_test_instances, "backward_input":phono_rev_test_instances}) # {'output':...}
-    # predictions = fixed_char_encoder.predict(
-    #     {"phono_forward_input": phono_test_instances, "phono_backward_input": phono_rev_test_instances, "ortho_forward_input": ortho_test_instances, "ortho_backward_input": ortho_rev_test_instances})  # {'output':...}
-    # # name_prefix + "_forward_input"
-    # print("Obtained predictions")
-    # # print(predictions)
-    #
-    # ner_outputs = predictions['ner_output']
-    #
-    # print("Obtained ner_outputs")
-    # # print(ner_outputs)
-    # print("Shape of ner_outputs:", ner_outputs.shape)
+         ortho_rev_test_instances, phono_test_labels, ortho_test_labels, wvec_test_instances, wvec_test_labels)
 
     print("Saving model architecture")
 
@@ -730,38 +879,18 @@ def train_model():
 
     fixed_char_encoder.save_weights(MODEL_NAME_PREFIX + str(N_EPOCH) + "_" + str(N_BATCH) + ".weights.h5", overwrite=True)
 
-    # print("Outputs shape: ", ner_outputs.shape)
-    # print("Test labels shape: ", phono_test_labels.shape)
-    # print("Test instances shape: ", phono_test_instances.shape, phono_rev_test_instances.shape)
-    #
-    # accuracies, test_conf_mat = get_accuracies(ner_outputs, phono_test_labels)
-    #
-    # print("Test stats")
-    #
-    # print(accuracies)
-    # print(test_conf_mat)
-
     # predictions = fixed_char_encoder.predict({"forward_input":phono_train_instances, "backward_input":phono_rev_train_instances}) # {'output':...}
     print("Evaluating on train")
     eval(fixed_char_encoder, phono_train_instances, phono_rev_train_instances, ortho_train_instances,
-         ortho_rev_train_instances, phono_train_labels, ortho_train_labels)
-    # predictions = fixed_char_encoder.predict(
-    #     {
-    #         "phono_forward_input": phono_train_instances, "phono_backward_input": phono_rev_train_instances,
-    #         "ortho_forward_input": ortho_train_instances, "ortho_backward_input": ortho_rev_train_instances
-    #         })  # {'output':...}
-    #
-    # ner_outputs = predictions['ner_output']
-    #
-    # accuracies, train_conf_mat = get_accuracies(ner_outputs, phono_train_labels)
-    #
-    # print("Train stats")
-    #
-    # print(accuracies)
-    # print(train_conf_mat)
+         ortho_rev_train_instances, phono_train_labels, ortho_train_labels, wvec_train_instances, wvec_train_labels)
 
-    print phono_label_index_dict
 
+    if USE_PHONO:
+        print phono_label_index_dict
+    elif USE_ORTHO:
+        print(ortho_label_index_dict)
+
+    raw_input("Transfer is up next. Press enter to continue")
     # raw_input("Finished training. Press enter to transfer model")
 
     print("De allocating source language mats to regain memory")
@@ -778,6 +907,10 @@ def train_model():
     del ortho_test_labels
     del ortho_rev_train_instances
     del ortho_rev_test_instances
+    del wvec_train_instances
+    del wvec_train_labels
+    del wvec_test_instances
+    del wvec_test_labels
 
     if USE_PHONO:
         [phono_train_instances,
@@ -787,7 +920,7 @@ def train_model():
          phono_rev_test_instances,
          phono_test_labels], \
         phono_label_index_dict = \
-            create_phono_mats(phono_src_char_vocab, word_category_sets, targ_NER_sets_dict, targ_non_NER_set, epi_targ)
+            create_phono_mats(phono_src_char_vocab, word_category_sets, targ_NER_sets_dict, targ_non_NER_set, epi_targ, use_caps=USE_CAPS)
     else:
         phono_train_instances = None
         phono_rev_train_instances = None
@@ -818,44 +951,18 @@ def train_model():
         ortho_test_labels = None
         ortho_label_index_dict = None
 
+    if USE_WORD_VECS:
+        [wvec_train_instances, wvec_train_labels], [wvec_test_instances, wvec_test_labels] = create_wvec_mats(
+            targ_NER_sets_dict, targ_non_NER_set, trg_wvecs, TEST_SPLIT)
+    else:
+        wvec_train_instances = None
+        wvec_train_labels = None
+        wvec_test_instances = None
+        wvec_test_labels = None
+
     print("Evaluating on test")
     eval(fixed_char_encoder, phono_test_instances, phono_rev_test_instances, ortho_test_instances,
-         ortho_rev_test_instances, phono_test_labels, ortho_test_labels)
-
-    # if USE_PHONO and USE_ORTHO:
-    #     print("Sanity checks")
-    #     assert False not in np.equal(ortho_train_labels, phono_train_labels), "Train sets are not equal"
-    #     assert False not in np.equal(ortho_test_labels, phono_test_labels), "Test sets not equal"
-    #     print("Sanity check passed")
-    #
-    # print("Zero shot transfer case")
-    # predictions = fixed_char_encoder.predict(
-    #     {
-    #         "phono_forward_input": phono_test_instances, "phono_backward_input": phono_rev_test_instances,
-    #         "ortho_forward_input": ortho_test_instances, "ortho_backward_input": ortho_rev_test_instances
-    #         })  # {'output':...}
-    # # name_prefix + "_forward_input"
-    # print("Obtained predictions")
-    # # print(predictions)
-    #
-    # ner_outputs = predictions['ner_output']
-    #
-    # print("Obtained ner_outputs")
-    # # print(ner_outputs)
-    # print("Shape of ner_outputs:", ner_outputs.shape)
-    #
-    # print("Outputs shape: ", ner_outputs.shape)
-    # print("Test labels shape: ", phono_test_labels.shape)
-    # print("Test instances shape: ", phono_test_instances.shape, phono_rev_test_instances.shape)
-    #
-    # accuracies, test_conf_mat = get_accuracies(ner_outputs, phono_test_labels)
-    #
-    # print("Test stats")
-    #
-    # print(accuracies)
-    # print(test_conf_mat)
-
-    # raw_input("Now fitting to target language.")
+         ortho_rev_test_instances, phono_test_labels, ortho_test_labels, wvec_test_instances, wvec_test_labels)
 
     target_fit_inputs = {}
     if USE_PHONO:
@@ -864,6 +971,8 @@ def train_model():
     if USE_ORTHO:
         target_fit_inputs["ortho_forward_input"] = ortho_train_instances
         target_fit_inputs["ortho_backward_input"] = ortho_rev_train_instances
+    if USE_WORD_VECS:
+        target_fit_inputs["wvec_input"] = wvec_train_instances
 
     if USE_PHONO:
         target_fit_inputs["ner_output"] = phono_train_labels
@@ -876,33 +985,7 @@ def train_model():
 
     print("Evaluating on test")
     eval(fixed_char_encoder, phono_test_instances, phono_rev_test_instances, ortho_test_instances,
-         ortho_rev_test_instances, phono_test_labels, ortho_test_labels)
-
-    # predictions = fixed_char_encoder.predict(
-    #     {
-    #         "phono_forward_input": phono_test_instances, "phono_backward_input": phono_rev_test_instances,
-    #         "ortho_forward_input": ortho_test_instances, "ortho_backward_input": ortho_rev_test_instances
-    #     })  # {'output':...}
-    # # name_prefix + "_forward_input"
-    # print("Obtained predictions")
-    # # print(predictions)
-    #
-    # ner_outputs = predictions['ner_output']
-    #
-    # print("Obtained ner_outputs")
-    # # print(ner_outputs)
-    # print("Shape of ner_outputs:", ner_outputs.shape)
-    #
-    # print("Outputs shape: ", ner_outputs.shape)
-    # print("Test labels shape: ", phono_test_labels.shape)
-    # print("Test instances shape: ", phono_test_instances.shape, phono_rev_test_instances.shape)
-    #
-    # accuracies, test_conf_mat = get_accuracies(ner_outputs, phono_test_labels)
-    #
-    # print("Test stats")
-    #
-    # print(accuracies)
-    # print(test_conf_mat)
+         ortho_rev_test_instances, phono_test_labels, ortho_test_labels, wvec_test_instances, wvec_test_labels)
 
     print("Saving model architecture")
 
