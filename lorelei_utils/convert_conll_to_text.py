@@ -79,10 +79,6 @@ def unkify(word_counts_dict, threshold=sys.maxint):
             rare_set.add(word)
     return(rare_set)
 
-ner_unks = unkify(counts_dict["NER"], NER_THRESH)
-non_ner_unks = unkify(counts_dict["NON-NER"], NON_NER_THRESH)
-
-
 def get_unk(word, ner_unks=set(), non_ner_unks=set()):
     if word in ner_unks:
         return(NER_UNK)
@@ -90,6 +86,9 @@ def get_unk(word, ner_unks=set(), non_ner_unks=set()):
         return(NON_NER_UNK)
     else:
         return(word)
+
+ner_unks = unkify(counts_dict["NER"], NER_THRESH)
+non_ner_unks = unkify(counts_dict["NON-NER"], NON_NER_THRESH)
 
 with open(CONLL_FILE, "r") as ip_file:
     op_str = ""

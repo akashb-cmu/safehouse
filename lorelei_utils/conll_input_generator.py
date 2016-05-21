@@ -1,36 +1,73 @@
 # -*- coding: utf-8 -*-
 import xml.etree.ElementTree as ETree
 from os import walk
+import argparse
+
+
+arg_parser = argparse.ArgumentParser()
+arg_parser.add_argument("-laf", "--laf_data_dir", help="Folder with the NER annotations in laf format",
+                        default="./bolt_data/LDC2016E29_BOLT_LRL_Uzbek_Representative_Language_Pack_V1.0/data/annotation/entity_annotation/simple/",
+                        type=str)
+
+arg_parser.add_argument("-ltf", "--ltf_data_dir", help="Folder with the raw text data",
+                        default="./bolt_data/LDC2016E29_BOLT_LRL_Uzbek_Representative_Language_Pack_V1.0/data/monolingual_text/ltf/",
+                        type=str)
+
+arg_parser.add_argument("-op_pref", "--output_name_prefix", help="Prefix for the output file",
+                        default="output_file_conll",
+                        type=str)
+arg_parser.add_argument("-exc_suf", "--exclude_suffixes", help="Whether to exclude suffixes from the NER span",
+                        default=0, choices=[0,1],
+                        type=int)
+arg_parser.add_argument("-use_laf", "--use_laf", help="Whether LAF annotations are present and should be used",
+                        default=1, choices=[0, 1],
+                        type=int)
+arg_parser.add_argument("-train_split", "--train_split", help="Percentage of data to use for training data",
+                        default=0.9,
+                        type=float)
+arg_parser.add_argument("-test_dev_split", "--test_dev_split", help="Split within the non-training data into dev and test",
+                        default=0.5,
+                        type=float)
+
+
+args = arg_parser.parse_args()
+print("Args used for this run:")
+print(args)
+
+
 
 # ltf file has the actual corpus
 # laf has the annotations
 
-#DATA_LAF_DIR = "./annotation_data" #.laf.xml files
+
+# DATA_LAF_DIR = "./annotation_data" #.laf.xml files
 # For turkish
 # DATA_LAF_DIR = "./bolt_data/LDC2014E115_BOLT_LRL_Turkish_Representative_Language_Pack_V2.2/data/annotation/entity_annotation/simple/"
+# For Uzbek
+# DATA_LAF_DIR = "./bolt_data/LDC2016E29_BOLT_LRL_Uzbek_Representative_Language_Pack_V1.0/data/annotation/entity_annotation/simple/"
+DATA_LAF_DIR = args.laf_data_dir
 
-# For uzbek
-DATA_LAF_DIR = "./bolt_data/LDC2016E29_BOLT_LRL_Uzbek_Representative_Language_Pack_V1.0/data/annotation/entity_annotation/simple/"
-
-#DATA_LTF_DIR = "./actual_data/" #.ltf.xml files
+# DATA_LTF_DIR = "./actual_data/" #.ltf.xml files
 # For turkish
 # DATA_LTF_DIR = "./bolt_data/LDC2014E115_BOLT_LRL_Turkish_Representative_Language_Pack_V2.2/data/monolingual_text/ltf/"
-
 # For Uzbek
-DATA_LTF_DIR = "./bolt_data/LDC2016E29_BOLT_LRL_Uzbek_Representative_Language_Pack_V1.0/data/monolingual_text/ltf/"
+# DATA_LTF_DIR = "./bolt_data/LDC2016E29_BOLT_LRL_Uzbek_Representative_Language_Pack_V1.0/data/monolingual_text/ltf/"
+DATA_LTF_DIR = args.ltf_data_dir
+# CONLL_FILE_PREFIX = "./conll_generated_files/uzbek_to_adhi_conll"
+CONLL_FILE_PREFIX = args.output_name_prefix
 
-CONLL_FILE_PREFIX = "./conll_generated_files/uzbek_to_adhi_conll"
+EXCLUDE_SUFFIXES_FLAG = False if args.exclude_suffixes is 0 else True
 
-EXCLUDE_SUFFIXES_FLAG = False
-
-TRAIN_SPLIT = 0.9
-TEST_DEV_SPLIT = 0.5
+TRAIN_SPLIT = args.train_split
+TEST_DEV_SPLIT = args.test_dev_split
 
 if DATA_LAF_DIR[-1] is not '/':
     DATA_LAF_DIR += '/'
 
 if DATA_LTF_DIR[-1] is not '/':
     DATA_LTF_DIR += '/'
+
+USE_LAF = True if args.use_laf is 1 else False
 
 
 def get_doc_tok_dict(data_ltf_dir): #, train_conll_file, dev_conll_file, test_conll_file, raw_text_file, train_split, test_dev_split):
@@ -74,17 +111,17 @@ def get_doc_tok_dict(data_ltf_dir): #, train_conll_file, dev_conll_file, test_co
                                 start_pos = int(token.attrib['start_char'])
                                 end_pos = int(token.attrib['end_char'])
                                 doc_tok_dict[doc_id][start_pos] = (word_token, end_pos, pos, segment_id)
-                #                 while start_pos > len(docstring):
-                #                     docstring += ' '
-                #                 docstring += word_token
-                #                 str_len = len(docstring)
-                #                 word_len = len(word_token)
-                #                 try:
-                #                     assert len(docstring) == end_pos + 1 and len(docstring) - len(word_token) == start_pos, "docstring and word don't align"
-                #                 except:
-                #                     print("We got a problem!")
-                #                 doc_span_pos[(doc_id, start_pos, end_pos)] = pos
-                # docstrings[doc_id] = docstrings.get(doc_id, '') + docstring
+                                #                 while start_pos > len(docstring):
+                                #                     docstring += ' '
+                                #                 docstring += word_token
+                                #                 str_len = len(docstring)
+                                #                 word_len = len(word_token)
+                                #                 try:
+                                #                     assert len(docstring) == end_pos + 1 and len(docstring) - len(word_token) == start_pos, "docstring and word don't align"
+                                #                 except:
+                                #                     print("We got a problem!")
+                                #                 doc_span_pos[(doc_id, start_pos, end_pos)] = pos
+                                # docstrings[doc_id] = docstrings.get(doc_id, '') + docstring
 
         break # prevent descending to subdirectories
     # return(docstrings, doc_span_pos)
@@ -140,8 +177,8 @@ def get_turkish_conll_ner_instances(data_laf_dir, doc_tok_dict, respect_suffix_e
                                                     next_doc_tok_index] + 1:]
                                                        ) > 0:
                                                     annotations_dict[doc_id][tok_segment_id] = annotations_dict[doc_id].get(
-                                                    tok_segment_id, []) + [(tok[end_pos - doc_toks_start_positions[
-                                                    next_doc_tok_index] + 1:], 'O')]
+                                                        tok_segment_id, []) + [(tok[end_pos - doc_toks_start_positions[
+                                                        next_doc_tok_index] + 1:], 'O')]
                                         else:
                                             annotations_dict[doc_id][tok_segment_id] = annotations_dict[doc_id].get(tok_segment_id, []) + [(tok, 'B-' + ner_type)]
                                         flag = 1
@@ -157,7 +194,7 @@ def get_turkish_conll_ner_instances(data_laf_dir, doc_tok_dict, respect_suffix_e
                                                     next_doc_tok_index] + 1:]
                                                        ) > 0:
                                                     annotations_dict[doc_id][tok_segment_id] = annotations_dict[doc_id].get(
-                                                    tok_segment_id, []) + [(tok[end_pos - doc_toks_start_positions[next_doc_tok_index] + 1 :], 'O')]
+                                                        tok_segment_id, []) + [(tok[end_pos - doc_toks_start_positions[next_doc_tok_index] + 1 :], 'O')]
                                         else:
                                             annotations_dict[doc_id][tok_segment_id] = annotations_dict[doc_id].get(tok_segment_id, []) + [(tok, 'I-' + ner_type)]
                                     next_doc_tok_index += 1
@@ -276,9 +313,9 @@ def write_annotations_to_conll_file(conll_file_prefix, train_split, test_dev_spl
 # docstrings, doc_span_pos = get_doc_tok_dict(DATA_LTF_DIR)
 doc_tok_dict = get_doc_tok_dict(DATA_LTF_DIR)
 
-# annotations_dict = get_turkish_conll_ner_instances(DATA_LAF_DIR, doc_tok_dict, EXCLUDE_SUFFIXES_FLAG) # Turkish method
+annotations_dict = get_turkish_conll_ner_instances(DATA_LAF_DIR, doc_tok_dict, EXCLUDE_SUFFIXES_FLAG) # Turkish method
 
-annotations_dict = get_uzbek_conll_ner_instances(DATA_LAF_DIR, doc_tok_dict, EXCLUDE_SUFFIXES_FLAG) # Uzbek method
+# annotations_dict = get_uzbek_conll_ner_instances(DATA_LAF_DIR, doc_tok_dict, EXCLUDE_SUFFIXES_FLAG) # Uzbek method
 
 write_annotations_to_conll_file(CONLL_FILE_PREFIX, TRAIN_SPLIT, TEST_DEV_SPLIT, annotations_dict)
 
